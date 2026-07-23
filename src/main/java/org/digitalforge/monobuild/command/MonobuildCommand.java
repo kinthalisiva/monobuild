@@ -39,14 +39,19 @@ public class MonobuildCommand implements Callable<Integer> {
         }
 
         String baseRef = null;
+        List<String> includedProjects = null;
+        List<String> excludedProjects = null;
+        
         if(buildOptions != null) {
             baseRef = buildOptions.baseTag;
             if(baseRef == null) {
                 baseRef = buildOptions.baseBranch;
             }
+            includedProjects = buildOptions.includedProjects;
+            excludedProjects = buildOptions.excludedProjects;
         }
 
-        return monobuild.buildTest(parameters.toArray(new String[parameters.size()]), baseRef);
+        return monobuild.buildTest(parameters.toArray(new String[0]), baseRef, includedProjects, excludedProjects);
     }
 
     @CommandLine.Command(name = "graph", description = "Find and print the graph of the monorepo")
@@ -96,6 +101,12 @@ public class MonobuildCommand implements Callable<Integer> {
 
         @CommandLine.Option(names = {"-b", "--branch"}, description = "Base branch to compare against")
         String baseBranch;
+
+        @CommandLine.Option(names = {"-i", "--include"}, split = ",", description = "Comma-separated list of projects to include")
+        List<String> includedProjects;
+
+        @CommandLine.Option(names = {"-e", "--exclude"}, split = ",", description = "Comma-separated list of projects to exclude")
+        List<String> excludedProjects;
 
     }
 

@@ -3,8 +3,6 @@ package org.digitalforge.monobuild.config;
 import java.util.List;
 import java.util.Map;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
-
 public class CircleCiConfig {
 
     private Map<String, JobConfig> jobs;

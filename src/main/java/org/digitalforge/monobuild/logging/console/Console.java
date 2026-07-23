@@ -1,12 +1,9 @@
 package org.digitalforge.monobuild.logging.console;
 
-import java.nio.file.Path;
-import java.text.MessageFormat;
 import java.text.NumberFormat;
 import java.time.Duration;
 import java.util.function.Function;
 import javax.inject.Inject;
-import javax.inject.Named;
 import javax.inject.Singleton;
 
 import org.slf4j.Logger;

@@ -10,7 +10,6 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -72,7 +71,7 @@ public class Monobuild {
         this.threadHelper = threadHelper;
     }
 
-    public int buildTest(String[] args, String baseRef) {
+    public int buildTest(String[] args, String baseRef, List<String> includedProjects, List<String> excludedProjects) {
 
         if(baseRef == null) {
             baseRef = MAIN;
@@ -89,12 +88,68 @@ public class Monobuild {
             //TODO: modify main branch to be a configuration thing(monobuildConfig.json perhaps as yml sucks)
             Collection<String> changedFiles = repoHelper.diff(repoDir.toFile(), oldGitRef, Constants.HEAD, baseRef);
             List<Project> changedProjects = projectHelper.getChangedProjects(allProjects, changedFiles, repoDir);
+            
+            // Apply include/exclude filters to changed projects FIRST
+            Stream<Project> filteredChangedStream = changedProjects.stream();
+            
+            if (includedProjects != null && !includedProjects.isEmpty()) {
+                filteredChangedStream = filteredChangedStream.filter(project -> 
+                    includedProjects.contains(project.name) || 
+                    includedProjects.stream().anyMatch(include -> 
+                        project.path.toString().contains(include)
+                    )
+                );
+            }
+
+            if (excludedProjects != null && !excludedProjects.isEmpty()) {
+                filteredChangedStream = filteredChangedStream.filter(project -> 
+                    !excludedProjects.contains(project.name) && 
+                    excludedProjects.stream().noneMatch(exclude -> 
+                        project.path.toString().contains(exclude)
+                    )
+                );
+            }
+            
+            List<Project> filteredChangedProjects = filteredChangedStream.collect(Collectors.toList());
+            
             Dag<Project> dag = projectHelper.getDependencyTree(allProjects, repoDir);
 
             // Build the affected projects, the projects that they depend on, and the projects that depend on them
-            List<Project> projectsToBuild = changedProjects.stream()
-                    .flatMap(p -> Streams.concat(dag.getAncestors(p).stream(), dag.getDescendants(p).stream(), Stream.of(p)))
+            // Now using the FILTERED changed projects and properly filtering the dependency tree
+            List<Project> projectsToBuild = filteredChangedProjects.stream()
+                    .flatMap(p -> Streams.concat(
+                        // Only include ancestors (dependencies) that match the include pattern
+                        dag.getAncestors(p).stream()
+                            .filter(ancestor -> includedProjects == null || includedProjects.isEmpty() || 
+                                    includedProjects.stream().anyMatch(include -> 
+                                        ancestor.path.toString().contains(include) || 
+                                        ancestor.name.equals(include)
+                                    )),
+                        // Only include descendants (dependents) that match the include pattern
+                        dag.getDescendants(p).stream()
+                            .filter(descendant -> includedProjects == null || includedProjects.isEmpty() || 
+                                    includedProjects.stream().anyMatch(include -> 
+                                        descendant.path.toString().contains(include) || 
+                                        descendant.name.equals(include)
+                                    )),
+                        Stream.of(p)
+                    ))
                     .distinct()
+                    // Final filter to ensure only included projects are built
+                    .filter(project -> 
+                        // Include if no includes specified, or if project matches include pattern
+                        (includedProjects == null || includedProjects.isEmpty() || 
+                         includedProjects.stream().anyMatch(include -> 
+                             project.path.toString().contains(include) || 
+                             project.name.equals(include)
+                         )) &&
+                        // Exclude if project matches exclude pattern
+                        (excludedProjects == null || excludedProjects.isEmpty() || 
+                         excludedProjects.stream().noneMatch(exclude -> 
+                             project.path.toString().contains(exclude) || 
+                             project.name.equals(exclude)
+                         ))
+                    )
                     .sorted(Comparator.comparing(p -> p.name))
                     .collect(Collectors.toList());
 
@@ -102,14 +157,14 @@ public class Monobuild {
             StringJoiner builtJoiner = new StringJoiner("\n", "", "\n");
 
             console.header("Changed projects");
-            if (!changedProjects.isEmpty()) {
-                for (Project project : changedProjects) {
+            if (!filteredChangedProjects.isEmpty()) {
+                for (Project project : filteredChangedProjects) {
                     Path path = repoDir.relativize(project.path);
                     console.infoLeftRight(project.name, path);
                     changedJoiner.add(path.toString());
                 }
             } else {
-                console.info("No projects changed");
+                console.info("No projects changed (after filtering)");
                 return 0;
             }
 
